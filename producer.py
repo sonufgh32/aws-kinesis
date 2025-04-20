@@ -65,22 +65,20 @@ def make_order():
 
 '''
     This function is used to inser batch records
-    in the kinesis data streams.
+    in the kinesis data streams in batch size of 5.
 '''
-def batchInsert(streamName):
+def batchInsert(streamName, totalRecords):
     print('Starting PutRecord Producer')
     kinesis = boto3.client('kinesis')
 
     order_records = []
 
-    while True:
+    for i in range(totalRecords):
         order = make_order()
-
         kinesis_entry = {
             'Data': json.dumps(order).encode('utf-8'),
             'PartitionKey': order['order_id']
         }
-
         order_records.append((order, kinesis_entry))
         if len(order_records) == 5:
             try:
@@ -165,11 +163,3 @@ def insertRecord(streamName, totalRecords):
             logging.error(e)
         time.sleep(1)
         i += 1
-
-
-def lambda_handler(event, context):
-    # insertRecord('kinesis-demo', 1000)
-    # overrideSequenceNumberInsert('kinesis-demo')
-    batchInsert('kinesis-demo')
-
-lambda_handler(1, 1)
