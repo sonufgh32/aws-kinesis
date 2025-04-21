@@ -4,6 +4,7 @@ import random
 import boto3
 import time
 import logging
+from decimal import Decimal
 import sys
 from uuid import uuid4
 from collections import namedtuple
@@ -64,12 +65,17 @@ def make_order():
 
 def createDynamoDBTable(tableName):
     dynamodb = boto3.resource('dynamodb', region_name='ap-south-1')
+
+    if tableName in dynamodb.meta.client.list_tables()['TableNames']:
+        logging.info(f"DynamoDB Table {tableName} already exists!!!")
+        return
+    
     try:
         response = dynamodb.create_table(
             TableName=tableName,
             KeySchema=[
                 {
-                    "AttributeName": "customer_id",
+                    "AttributeName": "order_id",
                     "KeyType": "HASH" # Partition Key
                 },
                 {
@@ -77,53 +83,92 @@ def createDynamoDBTable(tableName):
                     "KeyType": "RANGE" # Sort Key
                 }
             ],
-            AttributeDefinitions=[
+            AttributeDefinitions=[ # AttributeDefinitions container only columns that are part of KeySchema, GSI, LSI
+                {
+                    "AttributeName": "customer_id",
+                    "AttributeType": "S",
+                },
+                {
+                    "AttributeName": "seller_id",
+                    "AttributeType": "S",
+                },
                 {
                     "AttributeName": "order_id",
                     "AttributeType": "S",
                 },
-                {
-                    "AttributeName": "order_items",
-                    "AttributeType": ""
-                }
+                # {
+                #     "AttributeName": "order_items",
+                #     "AttributeType": "S"
+                # }
             ],
-            GlobalSecondaryIndexed=[
+            LocalSecondaryIndexes=[
                 {
                     "IndexName": "OrderIndex",
                     "KeySchema": [
                         {
-                            "AttributeName": "seller_id",
-                            "KeyType": "HASH"
+                            "AttributeName": "order_id",
+                            "KeyType": "HASH" # Partition Key
+                        },
+                        {
+                            "AttributeName": "customer_id",
+                            "KeyType": "RANGE" # Sort Key
                         }
                     ],
                     "Projection": {
                         "ProjectionType": "ALL" # ALL, KEYS_ONLY(Partition & Sort Key), INCLUDE
                         # "NonKeyAttributes": [""] # Only for INCLUDE type, provide list of columns names
-                    },
-                    "ProvisionedThroughput": {
-                        "ReadCapacityUnits": 5,
-                        "WriteCapacityUnits": 5
                     }
                 }
             ],
+            # GlobalSecondaryIndexed=[
+            #     {
+            #         "IndexName": "OrderIndex",
+            #         "KeySchema": [
+            #             {
+            #                 "AttributeName": "seller_id",
+            #                 "KeyType": "HASH"
+            #             }
+            #         ],
+            #         "Projection": {
+            #             "ProjectionType": "ALL" # ALL, KEYS_ONLY(Partition & Sort Key), INCLUDE
+            #             # "NonKeyAttributes": [""] # Only for INCLUDE type, provide list of columns names
+            #         },
+            #         "ProvisionedThroughput": {
+            #             "ReadCapacityUnits": 5,
+            #             "WriteCapacityUnits": 5
+            #         }
+            #     }
+            # ],
             ProvisionedThroughput={
                 "ReadCapacityUnits": 5,
                 "WriteCapacityUnits": 5
             }
         )
 
-        dynamodb.get_waiter('table_exists').wait(TableName=tableName) # table_not_exists
+        # logging.info(f"Response: {response}")
+
+        dynamodb.meta.client.get_waiter('table_exists').wait(TableName=tableName) # table_not_exists
+        
         logging.info(f"DynamoDB Table {tableName} created successfully!!!")
+
     except Exception as e:
         logging.error({
             'message': 'Error Creating Table',
             'error': str(e)
         })
 
-def insertRecord(recordCounts):
+def insertRecord(tableName, recordCounts):
     dynamodb = boto3.resource('dynamodb', region_name='ap-south-1')
-    tbl = dynamodb.Table('orders')
+    tbl = dynamodb.Table(tableName)
 
     for i in range(recordCounts):
-        response = tbl.put_item(Item=make_order())
-        logging.info(f"Record {i} insrted")
+        response = tbl.put_item(Item=json.loads(json.dumps(make_order()), parse_float=Decimal))
+        if response['ResponseMetadata']['HTTPStatusCode'] == 200:
+            logging.info(f"Record {i} inserted successfully!")
+        else:
+            logging.info("Something went wrong!!!")
+
+
+if __name__ == '__main__':
+    # createDynamoDBTable('orders')
+    insertRecord('orders', 1000)
